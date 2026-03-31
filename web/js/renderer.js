@@ -78,6 +78,77 @@ const COLORS = {
     judgeRing:     'rgba(255,255,255,0.5)',
 };
 
+// ==================== Skin System ====================
+/**
+ * Skin configuration. Each key is an image slot that, when set to a loaded
+ * HTMLImageElement / ImageBitmap, replaces the built-in programmatic drawing.
+ *
+ * Keys:
+ *   tap       – normal tap note head
+ *   tapEach   – each tap note head
+ *   tapBreak  – break tap note head
+ *   tapStar   – slide-head / star tap note
+ *   hold      – hold note head
+ *   holdTrail – hold trail bar (drawn as a vertical strip, tiled along path)
+ *   touch     – touch note (rendered as a ring image)
+ *   touchHold – touchhold note
+ *   slideStar – slide guiding star (rotated to travel direction)
+ *   wifiStar  – wifi guiding star
+ */
+const Skin = {
+    tap:       null,
+    tapEach:   null,
+    tapBreak:  null,
+    tapStar:   null,
+    hold:      null,
+    holdTrail: null,
+    touch:     null,
+    touchHold: null,
+    slideStar: null,
+    wifiStar:  null,
+};
+
+/**
+ * Apply a skin configuration object.
+ * Each value may be an HTMLImageElement, ImageBitmap, or a URL string.
+ * URL strings are loaded asynchronously; returns a Promise that resolves when
+ * all images have loaded (failed loads are silently skipped).
+ *
+ * @param {Object} skinConfig
+ * @returns {Promise<void>}
+ */
+function applySkin(skinConfig) {
+    const promises = Object.entries(skinConfig).map(([key, src]) => {
+        if (!src) { Skin[key] = null; return Promise.resolve(); }
+        if (src instanceof HTMLImageElement || (typeof ImageBitmap !== 'undefined' && src instanceof ImageBitmap)) {
+            Skin[key] = src;
+            return Promise.resolve();
+        }
+        if (typeof src === 'string') {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => { Skin[key] = img; resolve(); };
+                img.onerror = () => { Skin[key] = null; resolve(); }; // graceful fallback
+                img.src = src;
+            });
+        }
+        return Promise.resolve();
+    });
+    return Promise.all(promises).then(() => undefined);
+}
+
+/**
+ * Helper: draw a skin image centered at (cx, cy), scaled to size×size,
+ * optionally rotated by `angle` radians.
+ */
+function _drawSkinImage(ctx, img, cx, cy, size, angle = 0) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    if (angle) ctx.rotate(angle);
+    ctx.drawImage(img, -size / 2, -size / 2, size, size);
+    ctx.restore();
+}
+
 // ==================== Background ====================
 
 function drawBackground(ctx) {
@@ -189,24 +260,35 @@ function drawTap(ctx, note, now) {
     const radius = NOTE_RADIUS * Math.max(0.3, scale);
     const color = getNoteColor(note);
 
-    // Glow
-    ctx.shadowColor = color.fill;
-    ctx.shadowBlur = 12;
+    // Select skin image for this note's type
+    const skinImg = note.isBreak ? Skin.tapBreak
+        : (note.isStar || note.isSlideHead) ? Skin.tapStar
+        : note.isEach ? Skin.tapEach
+        : Skin.tap;
 
-    ctx.beginPath();
-    ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
-    ctx.fillStyle = color.fill;
-    ctx.fill();
+    if (skinImg) {
+        // Skin-based rendering: draw image centered at note position
+        _drawSkinImage(ctx, skinImg, pos.x, pos.y, radius * 2);
+    } else {
+        // Programmatic rendering (fallback)
+        ctx.shadowColor = color.fill;
+        ctx.shadowBlur = 12;
 
-    ctx.strokeStyle = color.stroke;
-    ctx.lineWidth = 2;
-    ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
+        ctx.fillStyle = color.fill;
+        ctx.fill();
 
-    ctx.shadowBlur = 0;
+        ctx.strokeStyle = color.stroke;
+        ctx.lineWidth = 2;
+        ctx.stroke();
 
-    // Star notes: draw a star pattern inside
-    if (note.isStar || note.isSlideHead) {
-        drawStar(ctx, pos.x, pos.y, radius * 0.6, (22.5 - note.padIdx * 45) * Math.PI / 180, '#ffffff');
+        ctx.shadowBlur = 0;
+
+        // Star notes: draw a star pattern inside
+        if (note.isStar || note.isSlideHead) {
+            drawStar(ctx, pos.x, pos.y, radius * 0.6, (22.5 - note.padIdx * 45) * Math.PI / 180, '#ffffff');
+        }
     }
 }
 
@@ -228,12 +310,9 @@ function drawHold(ctx, note, now) {
 
     const uv = getPadUnitvec(note.padIdx);
     const headPos = getTapPosition(note.padIdx, effectiveDist);
-    const tailPos = getTapPosition(note.padIdx, effectiveDistEnd);
 
     // Draw hold bar (line from head to tail)
     if (effectiveDist > effectiveDistEnd) {
-        // Draw a rounded rect along the pad direction
-        const angle = (22.5 - note.padIdx * 45) * Math.PI / 180;
         const lineLen = effectiveDist - effectiveDistEnd;
         const midDist = (effectiveDist + effectiveDistEnd) / 2;
         const midPos = getTapPosition(note.padIdx, midDist);
@@ -242,37 +321,54 @@ function drawHold(ctx, note, now) {
         ctx.translate(midPos.x, midPos.y);
         ctx.rotate(Math.atan2(uv.y, uv.x) + Math.PI / 2);
 
-        const barWidth = NOTE_RADIUS * 0.45;
-        ctx.beginPath();
-        ctx.rect(-barWidth, -lineLen / 2, barWidth * 2, lineLen);
-        ctx.fillStyle = COLORS.holdBar;
-        ctx.globalAlpha = 0.8;
-        ctx.fill();
-        ctx.globalAlpha = 1;
+        if (Skin.holdTrail) {
+            // Skin-based trail: draw tiled along the bar length
+            const barWidth = NOTE_RADIUS * 0.9;
+            const imgH = Skin.holdTrail.naturalHeight || Skin.holdTrail.height || barWidth;
+            const imgW = Skin.holdTrail.naturalWidth  || Skin.holdTrail.width  || barWidth;
+            const tileH = barWidth * (imgH / imgW);
+            let y = -lineLen / 2;
+            while (y < lineLen / 2) {
+                ctx.drawImage(Skin.holdTrail, -barWidth / 2, y, barWidth, Math.min(tileH, lineLen / 2 - y));
+                y += tileH;
+            }
+        } else {
+            const barWidth = NOTE_RADIUS * 0.45;
+            ctx.beginPath();
+            ctx.rect(-barWidth, -lineLen / 2, barWidth * 2, lineLen);
+            ctx.fillStyle = COLORS.holdBar;
+            ctx.globalAlpha = 0.8;
+            ctx.fill();
+            ctx.globalAlpha = 1;
 
-        // Center line
-        ctx.beginPath();
-        ctx.moveTo(0, -lineLen / 2);
-        ctx.lineTo(0, lineLen / 2);
-        ctx.strokeStyle = COLORS.holdBarCenter;
-        ctx.lineWidth = 2;
-        ctx.stroke();
+            // Center line
+            ctx.beginPath();
+            ctx.moveTo(0, -lineLen / 2);
+            ctx.lineTo(0, lineLen / 2);
+            ctx.strokeStyle = COLORS.holdBarCenter;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
 
         ctx.restore();
     }
 
     // Draw head
     const radius = NOTE_RADIUS * Math.max(0.3, scale);
-    ctx.shadowColor = COLORS.hold;
-    ctx.shadowBlur = 10;
-    ctx.beginPath();
-    ctx.arc(headPos.x, headPos.y, radius, 0, Math.PI * 2);
-    ctx.fillStyle = COLORS.hold;
-    ctx.fill();
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    ctx.shadowBlur = 0;
+    if (Skin.hold) {
+        _drawSkinImage(ctx, Skin.hold, headPos.x, headPos.y, radius * 2);
+    } else {
+        ctx.shadowColor = COLORS.hold;
+        ctx.shadowBlur = 10;
+        ctx.beginPath();
+        ctx.arc(headPos.x, headPos.y, radius, 0, Math.PI * 2);
+        ctx.fillStyle = COLORS.hold;
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+    }
 }
 
 // ==================== Touch Note ====================
@@ -295,24 +391,30 @@ function drawTouch(ctx, note, now) {
     const noteColor = note.onSlide ? COLORS.touchSlide : COLORS.touch;
 
     ctx.globalAlpha = Math.min(1, alpha);
-    ctx.shadowColor = noteColor;
-    ctx.shadowBlur = 8;
 
-    // Outer ring
-    ctx.beginPath();
-    ctx.arc(cx, cy, ring_r, 0, Math.PI * 2);
-    ctx.strokeStyle = noteColor;
-    ctx.lineWidth = 3;
-    ctx.stroke();
+    if (Skin.touch) {
+        _drawSkinImage(ctx, Skin.touch, cx, cy, ring_r * 2);
+    } else {
+        ctx.shadowColor = noteColor;
+        ctx.shadowBlur = 8;
 
-    // Center fill
-    ctx.beginPath();
-    ctx.arc(cx, cy, ring_r * 0.5, 0, Math.PI * 2);
-    ctx.fillStyle = noteColor;
-    ctx.globalAlpha = alpha * 0.6;
-    ctx.fill();
+        // Outer ring
+        ctx.beginPath();
+        ctx.arc(cx, cy, ring_r, 0, Math.PI * 2);
+        ctx.strokeStyle = noteColor;
+        ctx.lineWidth = 3;
+        ctx.stroke();
 
-    ctx.shadowBlur = 0;
+        // Center fill
+        ctx.beginPath();
+        ctx.arc(cx, cy, ring_r * 0.5, 0, Math.PI * 2);
+        ctx.fillStyle = noteColor;
+        ctx.globalAlpha = alpha * 0.6;
+        ctx.fill();
+
+        ctx.shadowBlur = 0;
+    }
+
     ctx.globalAlpha = 1;
 }
 
@@ -331,25 +433,31 @@ function drawTouchHold(ctx, note, now) {
     const ring_r = TOUCH_RING_RADIUS;
 
     ctx.globalAlpha = Math.min(1, alpha);
-    ctx.shadowColor = COLORS.touch;
-    ctx.shadowBlur = 10;
 
-    ctx.beginPath();
-    ctx.arc(cx, cy, ring_r, 0, Math.PI * 2);
-    ctx.strokeStyle = COLORS.touch;
-    ctx.lineWidth = 4;
-    ctx.stroke();
+    if (Skin.touchHold) {
+        _drawSkinImage(ctx, Skin.touchHold, cx, cy, ring_r * 2);
+    } else {
+        ctx.shadowColor = COLORS.touch;
+        ctx.shadowBlur = 10;
 
-    ctx.beginPath();
-    ctx.arc(cx, cy, ring_r * 0.5, 0, Math.PI * 2);
-    ctx.fillStyle = COLORS.touch;
-    ctx.globalAlpha = alpha * 0.7;
-    ctx.fill();
+        ctx.beginPath();
+        ctx.arc(cx, cy, ring_r, 0, Math.PI * 2);
+        ctx.strokeStyle = COLORS.touch;
+        ctx.lineWidth = 4;
+        ctx.stroke();
 
-    ctx.shadowBlur = 0;
+        ctx.beginPath();
+        ctx.arc(cx, cy, ring_r * 0.5, 0, Math.PI * 2);
+        ctx.fillStyle = COLORS.touch;
+        ctx.globalAlpha = alpha * 0.7;
+        ctx.fill();
+
+        ctx.shadowBlur = 0;
+    }
+
     ctx.globalAlpha = 1;
 
-    // Progress arc
+    // Progress arc (always drawn on top of skin or built-in)
     if (delta > 0 && note.duration > 0) {
         const progress = Math.min(1, delta / note.duration);
         ctx.beginPath();
@@ -472,7 +580,11 @@ function _drawSlideStarAtProportion(ctx, shape, proportion, note, alpha) {
     const starAngle = Math.atan2(ty, tx) + Math.PI / 2;
 
     ctx.globalAlpha = alpha;
-    drawStar(ctx, canvasPt.x, canvasPt.y, STAR_SIZE, starAngle, COLORS.slideStar);
+    if (Skin.slideStar) {
+        _drawSkinImage(ctx, Skin.slideStar, canvasPt.x, canvasPt.y, STAR_SIZE * 2, starAngle);
+    } else {
+        drawStar(ctx, canvasPt.x, canvasPt.y, STAR_SIZE, starAngle, COLORS.slideStar);
+    }
     ctx.globalAlpha = 1;
 }
 
@@ -545,7 +657,11 @@ function _drawWifiStar(ctx, svgPath, rotateDeg45, isReflect, proportion, alpha) 
     const svgPt = svgPathPoint(svgPath, proportion);
     const canvasPt = svgToCanvas(svgPt, isReflect, rotateDeg45);
     ctx.globalAlpha = alpha;
-    drawStar(ctx, canvasPt.x, canvasPt.y, STAR_SIZE * 0.9, 0, COLORS.wifiStar);
+    if (Skin.wifiStar) {
+        _drawSkinImage(ctx, Skin.wifiStar, canvasPt.x, canvasPt.y, STAR_SIZE * 2 * 0.9);
+    } else {
+        drawStar(ctx, canvasPt.x, canvasPt.y, STAR_SIZE * 0.9, 0, COLORS.wifiStar);
+    }
     ctx.globalAlpha = 1;
 }
 
