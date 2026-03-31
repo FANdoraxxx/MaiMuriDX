@@ -582,12 +582,6 @@ function renderFrame(ctx, activeNotes, now) {
  * Check if a note should be in the active list at time `now`.
  */
 function isNoteActive(note, now) {
-    // Note starts to appear when scale > 0: distance = (now - moment) * NOTE_SPEED + DISTANCE_EDGE > -63.75
-    // -> now > moment - (DISTANCE_EDGE + 63.75) / NOTE_SPEED = moment - 101.25 ticks
-    // Use 120 ticks lead to match the pointer-advance threshold in app.js
-    const APPEAR_LEAD = 120; // ticks before note.moment when note first appears
-    const FADE_TRAIL  = 60;  // ticks after note.endMoment to keep note visible
-
     const appearTime = note.moment - APPEAR_LEAD;
     const disappearTime = (note.endMoment || note.moment) + FADE_TRAIL;
 

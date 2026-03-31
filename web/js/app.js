@@ -256,8 +256,6 @@ function updateActiveNotes(now) {
     // Sort by moment: we can scan forward
     while (App.notePointer < App.notes.length) {
         const note = App.notes[App.notePointer];
-        // Each note has an "appear time" roughly note.moment - 110 ticks
-        const APPEAR_LEAD = 120;
         const appearTime = (note.type === NoteType.SLIDE || note.type === NoteType.WIFI)
             ? note.availableMoment - APPEAR_LEAD
             : note.moment - APPEAR_LEAD;

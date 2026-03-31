@@ -75,9 +75,9 @@ const BASE_SLIDE_SVG = {
 const SLIDE_REGISTRY = {};
 
 /**
- * Generate a canonical end-pad value: ((start + dist) % 8) || 8
+ * Get the ending pad number: ((start + dist) % 8) or 8, giving values 1–8.
  */
-function calcEnd(start, dist) {
+function getEndPad(start, dist) {
     return ((start + dist) % 8) || 8;
 }
 
@@ -90,7 +90,7 @@ function generateAllSlides() {
 
         // Straight slides (dist = 2..6)
         for (const dist of [2, 3, 4, 5, 6]) {
-            const end = calcEnd(start, dist);
+            const end = getEndPad(start, dist);
             const key = `${start}-${end}`;
             const baseKey = `1-${dist + 1}`;
             SLIDE_REGISTRY[key] = { svgPath: BASE_SLIDE_SVG[baseKey], isReflect: false, rotate };
@@ -98,7 +98,7 @@ function generateAllSlides() {
 
         // Circle arcs, p-curves, pp-curves
         for (let dist = 0; dist < 8; dist++) {
-            const endCCW = calcEnd(start, dist);
+            const endCCW = getEndPad(start, dist);
             const endCW = (((start - dist) % 8) + 8) % 8 || 8;
 
             const baseCircle = `1<${dist + 1}`;
@@ -129,32 +129,32 @@ function generateAllSlides() {
 
         // V-shape (dist = 1,2,3,5,6,7)
         for (const dist of [1, 2, 3, 5, 6, 7]) {
-            const end = calcEnd(start, dist);
+            const end = getEndPad(start, dist);
             const key = `${start}v${end}`;
             const baseKey = `1v${dist + 1}`;
             SLIDE_REGISTRY[key] = { svgPath: BASE_SLIDE_SVG[baseKey], isReflect: false, rotate };
         }
 
         // Lightning s / z
-        const endLightning = calcEnd(start, 4);
+        const endLightning = getEndPad(start, 4);
         SLIDE_REGISTRY[`${start}s${endLightning}`] = { svgPath: BASE_SLIDE_SVG["1s5"], isReflect: false, rotate };
         SLIDE_REGISTRY[`${start}z${endLightning}`] = { svgPath: BASE_SLIDE_SVG["1s5"], isReflect: true,  rotate };
 
         // L-shape (Grand V)
         for (const distEnd of [1, 2, 3, 4]) {
-            const endCCW = calcEnd(start, distEnd);
+            const endCCW = getEndPad(start, distEnd);
             const midCCW = (((start - 2) % 8) + 8) % 8 || 8;
             const keyCCW = `${start}V${midCCW}${endCCW}`;
             SLIDE_REGISTRY[keyCCW] = { svgPath: BASE_SLIDE_SVG[`1V7${distEnd + 1}`], isReflect: false, rotate };
 
             const endCW = (((start - distEnd) % 8) + 8) % 8 || 8;
-            const midCW = calcEnd(start, 2);
+            const midCW = getEndPad(start, 2);
             const keyCW = `${start}V${midCW}${endCW}`;
             SLIDE_REGISTRY[keyCW] = { svgPath: BASE_SLIDE_SVG[`1V7${distEnd + 1}`], isReflect: true,  rotate };
         }
 
         // Wifi
-        const endWifi = calcEnd(start, 4);
+        const endWifi = getEndPad(start, 4);
         SLIDE_REGISTRY[`${start}w${endWifi}`] = {
             isWifi: true,
             svgMid: BASE_SLIDE_SVG["1w5"],

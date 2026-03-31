@@ -111,7 +111,7 @@ class WifiNote extends SimaiNote {
 
 // ==================== Parser ====================
 
-const FAKE_HOLD_DURATION = JUDGE_TPF * 1; // 3 ticks
+const FAKE_HOLD_DURATION = JUDGE_TPF * 1; // JUDGE_TPF * 1 ticks (3 when JUDGE_TPF=3)
 
 class SimaiParser {
     static _parseHoldDuration(sig, bpm) {
@@ -262,9 +262,9 @@ class SimaiParser {
         }
 
         if (sigState === 3) {
-            // Total duration, divide by path lengths
+            // Total duration across all chain segments; split equally by segment count.
+            // TODO: Use svgPathLength() from renderer.js to split proportionally by actual path length.
             const totalDur = waitAndDurations[0][1];
-            // Rough equal split (we don't have path lengths in JS easily)
             const durations = shapes.map(() => totalDur / shapes.length);
             return [new SlideNote(now, cursor, shapes, wait, durations)];
         }

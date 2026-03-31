@@ -1,3 +1,9 @@
+// ==================== Appearance/Timing Constants ====================
+/** How many ticks before note.moment when a note first enters the active list */
+const APPEAR_LEAD = 120;
+/** How many ticks after note.endMoment a note stays in the active list */
+const FADE_TRAIL = 60;
+
 // ==================== Constants ====================
 const CANVAS_SIZE = 540;
 const CANVAS_CENTER_X = 270;
