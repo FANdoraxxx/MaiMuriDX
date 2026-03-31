@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<!--
+  player.html — MaiMuriDX Embeddable Player Demo
+
+  This page demonstrates how to embed the MaiMuriDX chart renderer into your
+  own website. The player component only exposes a canvas; ALL controls and
+  UI are built by the host page and communicate via the player API.
+
+  API quick reference:
+    const player = await createMaiPlayer('unity-canvas', { showTimer: true });
+    await player.loadChart(maidataText, '5');   // difficulty '1'-'7'
+    player.play();  player.pause();  player.reset();
+    player.seekToSeconds(30);
+
+  For custom note skins, pass image URLs (or Image objects) to setSkin().
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MaiMuriDX Player — 嵌入示例</title>
+<style>
+/* ===== Demo page layout — replace with your own styles ===== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: #0d0d1a;
+    color: #e0e0ff;
+    font-family: 'Segoe UI', sans-serif;
+    min-height: 100vh;
+    padding: 24px 16px;
+    gap: 20px;
+}
+
+h1 { color: #a78bfa; font-size: 1.4rem; letter-spacing: 0.04em; }
+h1 span { color: #60a5fa; }
+
+.layout {
+    display: flex;
+    gap: 24px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    justify-content: center;
+    width: 100%;
+    max-width: 1000px;
+}
+
+/* ===== Player canvas — this is all the renderer needs ===== */
+#unity-canvas {
+    display: block;
+    border-radius: 8px;
+    border: 2px solid #3a2d7a;
+    box-shadow: 0 0 28px #1a0f4455;
+    flex-shrink: 0;
+}
+
+/* ===== Host-page controls panel ===== */
+.controls {
+    flex: 1;
+    min-width: 260px;
+    max-width: 380px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.card {
+    background: #13132a;
+    border: 1px solid #2a2a4a;
+    border-radius: 8px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.card h2 {
+    font-size: 0.9rem;
+    color: #a78bfa;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #2a2a4a;
+}
+
+label { font-size: 0.82rem; color: #9999cc; }
+
+textarea {
+    width: 100%; height: 80px; resize: vertical;
+    background: #0d0d1a; border: 1px solid #333366;
+    border-radius: 5px; color: #c8c8ee; font: 11px monospace;
+    padding: 5px; outline: none;
+}
+textarea:focus { border-color: #6855e6; }
+
+select {
+    width: 100%; padding: 6px; border-radius: 5px;
+    background: #0d0d1a; border: 1px solid #333366;
+    color: #e0e0ff; font-size: 0.88rem; outline: none; cursor: pointer;
+}
+
+.btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+button {
+    flex: 1; padding: 7px 12px; border: none; border-radius: 5px;
+    font-size: 0.85rem; font-weight: 600; cursor: pointer;
+    transition: filter 0.1s, transform 0.08s;
+}
+button:active { transform: scale(0.95); }
+button:hover  { filter: brightness(1.15); }
+
+.btn-a { background: #6d3af5; color: #fff; }
+.btn-b { background: #2e2e52; color: #c0c0ee; }
+.btn-g { background: #16a34a; color: #fff; }
+.btn-r { background: #b91c1c; color: #fff; }
+
+#status {
+    min-height: 2em;
+    font-size: 0.82rem;
+    padding: 8px 10px;
+    border-radius: 5px;
+    border: 1px solid #2a2a4a;
+    color: #8888aa;
+    word-break: break-all;
+}
+#status.ok    { border-color: #22c55e66; color: #86efac; }
+#status.error { border-color: #dc262666; color: #fca5a5; }
+
+.time-row {
+    display: flex; align-items: center; gap: 8px; font-size: 0.82rem; color: #7777aa;
+}
+#timeDisplay { font-family: monospace; color: #a0a0cc; min-width: 80px; }
+
+input[type=range] {
+    flex: 1; accent-color: #6d3af5;
+    cursor: pointer;
+}
+
+/* Skin drop zone */
+.skin-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.skin-slot label { font-size: 0.75rem; }
+.skin-slot input[type=file] { display: none; }
+.skin-slot .pick-btn {
+    display: block; text-align: center; padding: 5px 6px;
+    border: 1px dashed #333366; border-radius: 4px;
+    font-size: 0.72rem; color: #6666aa; cursor: pointer; background: #0d0d1a;
+    transition: border-color 0.1s, color 0.1s;
+}
+.skin-slot .pick-btn:hover { border-color: #6855e6; color: #a090ee; }
+.skin-slot .pick-btn.loaded { border-style: solid; border-color: #22c55e66; color: #86efac; }
+
+/* API code block */
+.code-sample {
+    background: #0a0a1e; border: 1px solid #1e1e3e; border-radius: 5px;
+    padding: 10px 12px; font: 11px/1.6 monospace; color: #b0b0dd;
+    white-space: pre; overflow: auto; font-size: 0.7rem;
+}
+
+footer {
+    font-size: 0.72rem; color: #333366; text-align: center;
+    padding-top: 8px; border-top: 1px solid #1e1e36; width: 100%; max-width: 1000px;
+}
+footer a { color: #5544aa; text-decoration: none; }
+</style>
+</head>
+<body>
+
+<h1>MaiMuriDX <span>Embedded Player</span></h1>
+
+<div class="layout">
+
+  <!-- ===== The only thing the renderer needs: a <canvas> ===== -->
+  <canvas id="unity-canvas" width="540" height="540"></canvas>
+
+  <!-- ===== Host-page control panel (your own UI) ===== -->
+  <div class="controls">
+
+    <!-- Load chart -->
+    <div class="card">
+      <h2>📂 加载谱面</h2>
+      <button class="btn-a" id="btnPickFile">📁 选择 maidata.txt</button>
+      <input type="file" id="inputFile" accept=".txt">
+      <label for="areaPaste">或粘贴 maidata.txt 内容：</label>
+      <textarea id="areaPaste" placeholder="&title=...&#10;&inote_5=..."></textarea>
+      <div class="btn-row">
+        <button class="btn-b" id="btnPaste">解析粘贴内容</button>
+      </div>
+    </div>
+
+    <!-- Difficulty + playback -->
+    <div class="card">
+      <h2>🎵 难度 & 播放</h2>
+      <select id="selDiff">
+        <option value="">— 请先加载谱面 —</option>
+      </select>
+      <button class="btn-a" id="btnLoadDiff">加载选中难度</button>
+      <div class="btn-row">
+        <button class="btn-g" id="btnPlay">▶ 播放</button>
+        <button class="btn-b" id="btnPause">⏸ 暂停</button>
+        <button class="btn-r" id="btnReset">⏮ 重置</button>
+      </div>
+      <div class="time-row">
+        <span id="timeDisplay">--:--.--</span>
+        <input type="range" id="seekBar" min="0" max="1" step="0.001" value="0">
+        <span id="timeDur">--:--.--</span>
+      </div>
+    </div>
+
+    <!-- Skin -->
+    <div class="card">
+      <h2>🎨 自定义皮肤（Note 贴图）</h2>
+      <p style="font-size:0.75rem;color:#556688;">
+        选择图片文件替换对应 Note 的外观。留空则使用内置样式。
+      </p>
+      <div class="skin-grid">
+        <div class="skin-slot">
+          <label>Tap（普通）</label>
+          <button class="pick-btn" data-slot="tap" id="skinTap">选择图片</button>
+          <input type="file" id="skinFileTap" accept="image/*">
+        </div>
+        <div class="skin-slot">
+          <label>Tap（Each）</label>
+          <button class="pick-btn" data-slot="tapEach" id="skinTapEach">选择图片</button>
+          <input type="file" id="skinFileTapEach" accept="image/*">
+        </div>
+        <div class="skin-slot">
+          <label>Tap（Break）</label>
+          <button class="pick-btn" data-slot="tapBreak" id="skinTapBreak">选择图片</button>
+          <input type="file" id="skinFileTapBreak" accept="image/*">
+        </div>
+        <div class="skin-slot">
+          <label>Slide 头 / Star</label>
+          <button class="pick-btn" data-slot="tapStar" id="skinTapStar">选择图片</button>
+          <input type="file" id="skinFileTapStar" accept="image/*">
+        </div>
+        <div class="skin-slot">
+          <label>Hold 头</label>
+          <button class="pick-btn" data-slot="hold" id="skinHold">选择图片</button>
+          <input type="file" id="skinFileHold" accept="image/*">
+        </div>
+        <div class="skin-slot">
+          <label>Hold 轨道</label>
+          <button class="pick-btn" data-slot="holdTrail" id="skinHoldTrail">选择图片</button>
+          <input type="file" id="skinFileHoldTrail" accept="image/*">
+        </div>
+        <div class="skin-slot">
+          <label>Touch</label>
+          <button class="pick-btn" data-slot="touch" id="skinTouch">选择图片</button>
+          <input type="file" id="skinFileTouch" accept="image/*">
+        </div>
+        <div class="skin-slot">
+          <label>Slide 星</label>
+          <button class="pick-btn" data-slot="slideStar" id="skinSlideStar">选择图片</button>
+          <input type="file" id="skinFileSlideStar" accept="image/*">
+        </div>
+      </div>
+    </div>
+
+    <!-- API example -->
+    <div class="card">
+      <h2>💻 API 使用示例</h2>
+      <div class="code-sample" id="apiSample">// 等待谱面加载后显示示例...</div>
+    </div>
+
+    <!-- Status -->
+    <div id="status">请加载 maidata.txt 文件开始使用。</div>
+  </div>
+
+</div>
+
+<footer>
+  <a href="https://github.com/FANdoraxxx/MaiMuriDX" target="_blank">MaiMuriDX</a>
+  嵌入播放器示例 &nbsp;|&nbsp; 原作者: Minepig
+</footer>
+
+<!-- ===== Player scripts (order matters) ===== -->
+<script src="js/core.js"></script>
+<script src="js/slide_data.js"></script>
+<script src="js/parser.js"></script>
+<script src="js/renderer.js"></script>
+<script src="player.js"></script>
+
+<script>
+/* ================================================================
+   Host-page controller — this is YOUR code, not part of the player
+   ================================================================ */
+
+let player = null;      // MaiPlayer instance
+let seekDragging = false;
+
+// ---- Initialise player on page load ----
+window.addEventListener('DOMContentLoaded', async () => {
+    player = await createMaiPlayer('unity-canvas', { showTimer: true });
+
+    // ---- Player event handlers ----
+    player.addEventListener('chartloaded', (e) => {
+        const d = e.detail;
+        setStatus(`已加载: "${d.title}"  共 ${d.noteCount} 个 Note`, 'ok');
+
+        // Populate difficulty selector
+        const sel = document.getElementById('selDiff');
+        const diffNames = { '1':'Easy','2':'Basic','3':'Advanced','4':'Expert','5':'Master','6':'Re:Master','7':'Utage' };
+        sel.innerHTML = '';
+        for (const k of d.difficulties) {
+            const opt = document.createElement('option');
+            opt.value = k;
+            opt.textContent = `${diffNames[k] || k} (${k})`;
+            sel.appendChild(opt);
+        }
+        sel.value = d.difficulties[d.difficulties.length - 1];
+
+        // Update seek bar range
+        document.getElementById('seekBar').max = d.durationTicks;
+        document.getElementById('timeDur').textContent = fmtTicks(d.durationTicks);
+
+        updateApiSample(d.title);
+    });
+
+    player.addEventListener('timeupdate', (e) => {
+        if (!seekDragging) {
+            document.getElementById('timeDisplay').textContent = fmtTicks(e.detail.ticks);
+            document.getElementById('seekBar').value = Math.max(0, e.detail.ticks);
+        }
+    });
+
+    player.addEventListener('play',  () => setStatus('播放中…'));
+    player.addEventListener('pause', () => setStatus('已暂停'));
+    player.addEventListener('reset', () => {
+        document.getElementById('timeDisplay').textContent = fmtTicks(-JUDGE_TPS * 3);
+        document.getElementById('seekBar').value = 0;
+        setStatus('已重置');
+    });
+    player.addEventListener('ended', () => setStatus('谱面播放完毕', 'ok'));
+    player.addEventListener('error', (e) => setStatus('错误: ' + e.detail.message, 'error'));
+});
+
+// ---- File picker ----
+document.getElementById('btnPickFile').addEventListener('click', () =>
+    document.getElementById('inputFile').click());
+
+document.getElementById('inputFile').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => loadText(ev.target.result);
+    reader.readAsText(file, 'utf-8');
+});
+
+// ---- Paste ----
+document.getElementById('btnPaste').addEventListener('click', () => {
+    const text = document.getElementById('areaPaste').value.trim();
+    if (!text) { setStatus('请先粘贴 maidata.txt 内容', 'error'); return; }
+    loadText(text);
+});
+
+function loadText(text) {
+    player.loadChart(text).catch(() => {});
+}
+
+// ---- Difficulty ----
+document.getElementById('btnLoadDiff').addEventListener('click', () => {
+    const diff = document.getElementById('selDiff').value;
+    if (!diff) { setStatus('请先加载谱面', 'error'); return; }
+    player.setDifficulty(diff).catch(() => {});
+});
+
+// ---- Playback ----
+document.getElementById('btnPlay').addEventListener('click', () => player.play());
+document.getElementById('btnPause').addEventListener('click', () => player.pause());
+document.getElementById('btnReset').addEventListener('click', () => player.reset());
+
+// ---- Seek bar ----
+const seekBar = document.getElementById('seekBar');
+seekBar.addEventListener('mousedown', () => { seekDragging = true; });
+seekBar.addEventListener('input', () => {
+    document.getElementById('timeDisplay').textContent = fmtTicks(+seekBar.value);
+});
+seekBar.addEventListener('change', () => {
+    seekDragging = false;
+    player.seekToTicks(+seekBar.value);
+});
+
+// ---- Skin pickers ----
+const SKIN_SLOTS = ['tap','tapEach','tapBreak','tapStar','hold','holdTrail','touch','slideStar'];
+
+SKIN_SLOTS.forEach(slot => {
+    const btn      = document.getElementById('skin' + slot.charAt(0).toUpperCase() + slot.slice(1));
+    const fileInput = document.getElementById('skinFile' + slot.charAt(0).toUpperCase() + slot.slice(1));
+    if (!btn || !fileInput) return;
+
+    btn.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const url = URL.createObjectURL(file);
+        player.setSkin({ [slot]: url }).then(() => {
+            btn.textContent = '✓ ' + file.name.slice(0, 18);
+            btn.classList.add('loaded');
+        });
+    });
+});
+
+// ---- Utilities ----
+function setStatus(msg, type) {
+    const el = document.getElementById('status');
+    el.textContent = msg;
+    el.className = type || '';
+}
+
+function fmtTicks(ticks) {
+    const seconds = ticks / JUDGE_TPS;
+    const sign = seconds < 0 ? '-' : '';
+    const abs  = Math.abs(seconds);
+    const m    = Math.floor(abs / 60);
+    const s    = abs % 60;
+    return `${sign}${String(m).padStart(2,'0')}:${s.toFixed(2).padStart(5,'0')}`;
+}
+
+function updateApiSample(title) {
+    document.getElementById('apiSample').textContent =
+`// 初始化播放器（仅需一次）
+const player = await createMaiPlayer('unity-canvas', {
+    showTimer: true,
+    skin: { tap: '/skins/tap.png', tapEach: '/skins/each.png' }
+});
+
+// 加载谱面："${title || 'My Song'}"
+await player.loadChart(maidataText, '5');  // 难度 '1'–'7'
+player.play();
+
+// 播放控制
+player.pause();
+player.reset();
+player.seekToSeconds(30);
+
+// 事件监听
+player.addEventListener('timeupdate', (e) => {
+    console.log(e.detail.seconds.toFixed(2) + 's');
+});
+player.addEventListener('ended', () => console.log('done'));
+
+// MaiCreator SendMessage 兼容接口
+player.SendMessage('Player', 'Play', '');
+player.SendMessage('Player', 'SetSkin',
+    JSON.stringify({ tap: '/skins/tap.png' }));`;
+}
+</script>
+
+</body>
+</html>

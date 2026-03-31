@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MaiMuriDX Web Renderer — maidata 浏览器渲染器</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #0d0d1a;
+    color: #e0e0ff;
+    font-family: 'Segoe UI', 'Noto Sans SC', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+    gap: 16px;
+  }
+
+  h1 {
+    font-size: 1.6rem;
+    color: #a78bfa;
+    letter-spacing: 0.05em;
+    text-shadow: 0 0 20px #7c3aed66;
+  }
+  h1 span { color: #60a5fa; }
+
+  .subtitle {
+    color: #8888bb;
+    font-size: 0.9rem;
+    margin-top: -10px;
+  }
+
+  .main-layout {
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    justify-content: center;
+    width: 100%;
+    max-width: 1100px;
+  }
+
+  /* Canvas */
+  .canvas-wrap {
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  canvas#gameCanvas {
+    display: block;
+    border: 2px solid #4a3d80;
+    border-radius: 8px;
+    box-shadow: 0 0 30px #2d1f6066;
+  }
+
+  #timer {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    color: #ffffffcc;
+    font: 13px monospace;
+    pointer-events: none;
+  }
+
+  /* Controls panel */
+  .controls {
+    flex: 1;
+    min-width: 280px;
+    max-width: 400px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .panel {
+    background: #1a1a2e;
+    border: 1px solid #2e2e4e;
+    border-radius: 8px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .panel h2 {
+    font-size: 0.95rem;
+    color: #a78bfa;
+    border-bottom: 1px solid #2e2e4e;
+    padding-bottom: 6px;
+  }
+
+  label {
+    font-size: 0.85rem;
+    color: #aaaacc;
+  }
+
+  input[type="file"] { display: none; }
+
+  textarea#pasteArea {
+    width: 100%;
+    height: 90px;
+    background: #0d0d1a;
+    border: 1px solid #3a3a5e;
+    border-radius: 5px;
+    color: #d0d0ff;
+    font: 11px monospace;
+    padding: 6px;
+    resize: vertical;
+    outline: none;
+  }
+  textarea#pasteArea:focus { border-color: #6d5af5; }
+
+  select#diffSelect {
+    width: 100%;
+    padding: 6px 8px;
+    background: #12122a;
+    border: 1px solid #3a3a5e;
+    border-radius: 5px;
+    color: #e0e0ff;
+    font-size: 0.9rem;
+    outline: none;
+    cursor: pointer;
+  }
+  select#diffSelect:focus { border-color: #6d5af5; }
+
+  .btn-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  button {
+    padding: 7px 14px;
+    border: none;
+    border-radius: 5px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+    flex: 1;
+  }
+  button:active { transform: scale(0.96); }
+
+  .btn-primary   { background: #6d3af5; color: #fff; }
+  .btn-primary:hover { background: #7c4af7; }
+  .btn-secondary { background: #2e2e4e; color: #c0c0ee; }
+  .btn-secondary:hover { background: #3a3a60; }
+  .btn-play      { background: #22c55e; color: #fff; }
+  .btn-play:hover { background: #16a34a; }
+  .btn-danger    { background: #dc2626; color: #fff; }
+  .btn-danger:hover { background: #b91c1c; }
+
+  .status {
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    background: #1a1a2e;
+    border: 1px solid #2e2e4e;
+    color: #aaaacc;
+    min-height: 2.2em;
+    word-break: break-all;
+  }
+  .status.ok    { border-color: #22c55e66; color: #86efac; }
+  .status.error { border-color: #dc262666; color: #fca5a5; }
+
+  #info {
+    font-size: 0.82rem;
+    color: #7788cc;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  #noteCount {
+    font-size: 0.8rem;
+    color: #5566aa;
+  }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.78rem;
+    color: #9999bb;
+  }
+  .swatch {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.2);
+    flex-shrink: 0;
+  }
+
+  footer {
+    color: #444466;
+    font-size: 0.75rem;
+    text-align: center;
+    padding-top: 10px;
+    border-top: 1px solid #1e1e36;
+    width: 100%;
+    max-width: 1100px;
+  }
+  footer a { color: #6655aa; text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<h1>MaiMuriDX <span>Web Renderer</span></h1>
+<p class="subtitle">maidata 浏览器渲染器 — 基于 MaiMuriDX 移植</p>
+
+<div class="main-layout">
+
+  <!-- Canvas -->
+  <div class="canvas-wrap">
+    <canvas id="gameCanvas" width="540" height="540"></canvas>
+    <div id="timer">--:--.--</div>
+  </div>
+
+  <!-- Controls -->
+  <div class="controls">
+
+    <!-- Load file -->
+    <div class="panel">
+      <h2>📂 加载谱面</h2>
+      <div class="btn-row">
+        <button class="btn-primary" id="fileBtn">📁 选择 maidata.txt</button>
+        <input type="file" id="fileInput" accept=".txt">
+      </div>
+      <label for="pasteArea">或粘贴 maidata.txt 内容：</label>
+      <textarea id="pasteArea" placeholder="&title=...&#10;&inote_5=..."></textarea>
+      <button class="btn-secondary" id="pasteBtn">解析粘贴内容</button>
+    </div>
+
+    <!-- Difficulty -->
+    <div class="panel">
+      <h2>🎵 选择难度</h2>
+      <select id="diffSelect">
+        <option value="">— 请先加载谱面 —</option>
+      </select>
+      <button class="btn-primary" id="loadBtn">加载选中难度</button>
+      <div id="info"></div>
+      <div id="noteCount"></div>
+    </div>
+
+    <!-- Playback -->
+    <div class="panel">
+      <h2>▶ 播放控制</h2>
+      <div class="btn-row">
+        <button class="btn-play"    id="playBtn">▶ 播放</button>
+        <button class="btn-danger"  id="resetBtn">⏮ 重置</button>
+      </div>
+      <p style="font-size:0.78rem;color:#556688;margin-top:2px;">
+        提示：当前为纯视觉预览，无音频同步。
+      </p>
+    </div>
+
+    <!-- Legend -->
+    <div class="panel">
+      <h2>🎨 图例</h2>
+      <div class="legend">
+        <div class="legend-item"><div class="swatch" style="background:#ffffff"></div>Tap</div>
+        <div class="legend-item"><div class="swatch" style="background:#ffe040"></div>Each</div>
+        <div class="legend-item"><div class="swatch" style="background:#ff7043"></div>Break</div>
+        <div class="legend-item"><div class="swatch" style="background:#64b5f6"></div>Slide 头</div>
+        <div class="legend-item"><div class="swatch" style="background:#f48fb1"></div>Hold</div>
+        <div class="legend-item"><div class="swatch" style="background:#aed581"></div>Touch</div>
+        <div class="legend-item"><div class="swatch" style="background:#80deea"></div>Slide-Touch</div>
+        <div class="legend-item"><div class="swatch" style="background:rgba(255,255,255,0.7);border-radius:2px"></div>Slide 轨道</div>
+      </div>
+    </div>
+
+    <!-- Status -->
+    <div class="status" id="status">请加载 maidata.txt 文件开始使用。</div>
+  </div>
+
+</div>
+
+<footer>
+  基于 <a href="https://github.com/FANdoraxxx/MaiMuriDX" target="_blank">MaiMuriDX</a> 的浏览器端渲染器移植 &nbsp;|&nbsp;
+  原作者: Minepig &nbsp;|&nbsp;
+  仅供学习交流
+</footer>
+
+<!-- Scripts (order matters: dependencies first) -->
+<script src="js/core.js"></script>
+<script src="js/slide_data.js"></script>
+<script src="js/parser.js"></script>
+<script src="js/renderer.js"></script>
+<script src="js/app.js"></script>
+
+</body>
+</html>
